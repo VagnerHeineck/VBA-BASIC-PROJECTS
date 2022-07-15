@@ -1,0 +1,214 @@
+Rem Attribute VBA_ModuleType=VBAModule
+Option VBASupport 1
+'Tranferência arquivo hyperlink
+Private Declare Function URLDownloadToFile Lib "urlmon" Alias "URLDownloadToFileA" _
+    (ByVal pCaller As Long, ByVal szURL As String, ByVal szFileName As String, _
+    ByVal dwReserved As Long, ByVal lpfnCB As Long) As Long
+
+
+'Sub rotina principal
+Sub MacroMain()
+    Dim ws As Worksheet
+    Set ws = ActiveSheet
+    On Error GoTo Err
+    Dim Auxiliar As Long
+    Dim URL As String, CaminhoLocal As String, Nome As String, Pasta_arq As String
+    Dim ArqName As String, Data As String
+    Dim testa As Integer
+    
+    'Escreve "PASTA ARQUIVO" e armazena nome da pasta arquivo desejada
+    Cells(1, 1).Value = "PASTA ARQUIVO:"
+    Pasta_arq = Cells(1, 2).Value
+
+    'Escreve cabeçalho das Colunas de A a D
+    Cells(2, 1).Value = "NOME"
+    Cells(2, 2).Value = "DATA"
+    Cells(2, 3).Value = "FOTO1"
+    Cells(2, 4).Value = "FOTO2"
+    
+    'Escreve nomes das colunas E e F (Status)
+    Cells(2, 5).Value = "ARQUIVO FOTO1"
+    Cells(2, 6).Value = "ARQUIVO FOTO2"
+    
+    'Verifica existencia diretorio
+    Pasta_arq = verificaPst(Pasta_arq)
+    Cells(1, 2).Value = Pasta_arq
+    For lin = 3 To Cells(Rows.Count, 2).End(xlUp).Row
+        For col = 3 To 4
+            celula = Cells(lin, col).Address(RowAbsolute:=False, ColumnAbsolute:=False)
+            campolink = Range(celula).Value
+            If (campolink <> "") Then
+                If ((Cells(lin, col + 2).Value = "") Or (Cells(lin, col + 2).Value = "Sem link") Or (Cells(lin, col + 2).Value = "Erro no hyperlink")) Then
+                    Nome = Cells(lin, 1).Value
+                    
+                    'Tratamento do NOME (retira ",\,/,:,*,?,<,>,|)
+                    Nome = verificaNome(Nome)
+                    
+                    'Formata Data
+                    Data = Format(Cells(lin, 2).Value, "ddmmyyyy")
+                    ArqName = geraNome(Nome, Data, Pasta_arq)
+                    Cells(lin, col + 2).Value = ArqName
+                    URL = campolink
+                    CaminhoLocal = Pasta_arq + ArqName + ".jpg"
+                    Auxiliar = armazenaArq(URL, CaminhoLocal)
+                    testa = verificaResultado(lin, col + 2)
+                    If (testa) Then
+                        Cells(lin, col + 2).Font.Bold = True
+                        Cells(lin, col + 2).Font.Color = vbGreen
+                    Else
+                        Cells(lin, col + 2).Font.Bold = True
+                        Cells(lin, col + 2).Font.Color = vbRed
+                    End If
+                End If
+            Else
+                Cells(lin, col + 2).Font.Bold = True
+                Cells(lin, col + 2).Font.Color = vbBlue
+                Cells(lin, col + 2).Value = "Sem Link"
+            End If
+        Next col
+    Next lin
+    MsgBox "Download Concluído!"
+    Exit Sub
+Err:
+    MsgBox "Erro no download do arquivo"
+End Sub
+
+'Verifica se o arquivo jpg realmente foi criado na pasta
+Function verificaResultado(lin, col) As Boolean
+    Dim EndArq As String, result As Boolean
+    EndArq = Cells(1, 2).Value + Cells(lin, col).Value + ".jpg"
+    If (dir(EndArq) = vbNullString) Then
+        NovaURL = verificaLink(lin, col - 2, EndArq)
+        Auxiliar = armazenaArq(NovaURL, EndArq)
+        If (dir(EndArq) = vbNullString) Then
+            result = False
+            Cells(lin, col).Value = "Erro no hyperlink"
+            verificaResultado = result
+        Else
+            result = True
+            verificaResultado = result
+        End If
+    Else
+        result = True
+        verificaResultado = result
+    End If
+End Function
+
+'Verifica se o link tem espaços ou letras acentuadas ou ç
+Function verificaLink(ByVal lin As Double, ByVal col As Integer, EndArq As String) As String
+    Dim URL As String
+    Dim Unithex As String
+    Dim Auxiliar As Long
+    Dim car As Integer
+    URL = Cells(lin, col).Value
+    If (Cells(lin, col).Value <> "Sem Link") Then
+        For car = 20 To 255
+            If (car = 20) Then
+                URL = reconstroiNome(URL, Chr(car), "retirar")
+            End If
+            If (car > 191) Then
+                Unithex = convDtoUH(car)
+                URL = reconstroiNome(URL, Chr(car), Unithex)
+            End If
+        Next car
+    End If
+    CaminhoLocal = EndArq
+    Auxiliar = armazenaArq(URL, CaminhoLocal)
+    verificaLink = URL
+End Function
+'Faz conversão da letra para UTF-8 para caracteres especiais
+Function convDtoUH(car As Integer) As String
+    Dim conv As String
+    Dim H1 As String, H2 As String
+    Dim num As Double
+    conv = Hex(CDbl(49856 + car))
+    H1 = Left(conv, 2)
+    H2 = Right(conv, 2)
+    conv = "%" + H1 + "%" + H2
+    convDtoUH = conv
+End Function
+
+
+'Salva o arquivo proveniente do hyperlink na pasta de arquivos
+Function armazenaArq(ByVal URL As String, ByVal CaminhoLocal As String) As Long
+Dim Auxiliar As Long
+Auxiliar = URLDownloadToFile(0, URL, CaminhoLocal, 0, 0)
+armazenaArq = Auxiliar
+End Function
+
+'verifica se na coluna nome tem algum dos caracteres do vetor e retira-os do nome
+Function verificaNome(Nome As String) As String
+    Dim cara As String
+    Dim strs As Variant
+    Dim Nos As Variant
+    strs = Array("""", "/", ":", "*", "?", "\", "<", ">", """|""")
+    For i = LBound(strs) To UBound(strs)
+        cara = strs(i)
+        Nome = reconstroiNome(Nome, cara, "retirar")
+    Next i
+    verificaNome = Nome
+End Function
+
+'Ajusta o Nome ou hyperlink para um modo aceitável
+Function reconstroiNome(Nome As String, str2 As String, acao As String) As String
+        Dim fatias As Variant
+        Dim Rnome As String
+        While (InStr(1, Nome, str2, vbBinaryCompare) <> 0)
+            fatias = Split(Nome, str2)
+            Rnome = ""
+            For i = LBound(fatias) To UBound(fatias)
+                If acao = "retirar" Then
+                    Rnome = Rnome + fatias(i)
+                Else
+                    Rnome = Rnome + fatias(i) + acao
+                End If
+            Next i
+            Nome = Rnome
+        Wend
+        reconstroiNome = Nome
+End Function
+
+'gera o nome do arquivo na forma NOME_DATA_(Número).jpg
+Function geraNome(Nome As String, Data As String, Pst As String) As String
+    Dim NumArq As Integer
+    Dim og As String
+    Dim NomeArq, EndArq As String
+    Dim saida As Variant
+    NumArq = 1
+    NomeArq = Nome + "_" + Data
+    EndArq = Pst + NomeArq + ".jpg"
+    While (dir(EndArq) <> vbNullString)
+        NomeArq = Nome + "_" + Data + "_" + Format(NumArq)
+        EndArq = Pst + NomeArq + ".jpg"
+        NumArq = NumArq + 1
+    Wend
+    geraNome = NomeArq
+End Function
+
+'Caso não exista uma pasta para salvar os arquivo, cria a pasta Fotos_Planilha
+Function verificaPst(Pst As String) As String
+    Dim l As String
+    If Pst = "" Then
+        Pst = "C:\Users\" + getUsr() + "\Downloads\Fotos_Planilha\"
+        criaPst (Pst)
+        verificaPst = Pst
+    Else
+        criaPst (Pst)
+        verificaPst = Pst
+    End If
+End Function
+
+Sub criaPst(Pst As String)
+    If (Len(dir(Pst, vbDirectory) & "")) <= 0 Then
+        MkDir Pst
+    End If
+End Sub
+'Encontra nome de usuário do PC, no Windows
+Function getUsr() As String
+    Dim GetUserN
+    Dim ObjNetwork
+    Set ObjNetwork = CreateObject("WScript.Network")
+    GetUserN = ObjNetwork.UserName
+    getUsr = GetUserN
+End Function
+
